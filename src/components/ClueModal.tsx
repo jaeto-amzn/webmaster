@@ -13,10 +13,11 @@ const SOURCE_LABEL: Record<Source, string> = {
 interface Props {
   clue: Clue;
   revealed: boolean;
+  currentPlayerName: string;
   dispatch: Dispatch<Action>;
 }
 
-export function ClueModal({ clue, revealed, dispatch }: Props) {
+export function ClueModal({ clue, revealed, currentPlayerName, dispatch }: Props) {
   return (
     <div className="overlay" onClick={() => dispatch({ type: "close" })}>
       <div
@@ -27,6 +28,7 @@ export function ClueModal({ clue, revealed, dispatch }: Props) {
       >
         <div className="clue-meta">
           <span className="value">${clue.value}</span>
+          <span className="turn">{currentPlayerName}&rsquo;s turn</span>
           <span className="source">{SOURCE_LABEL[clue.source]}</span>
         </div>
 

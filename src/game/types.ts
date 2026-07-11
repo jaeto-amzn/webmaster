@@ -27,8 +27,20 @@ export interface ClueRef {
   q: number;
 }
 
-export interface GameState {
+export interface Player {
+  name: string;
   score: number;
+}
+
+/** setup = choosing player count; playing = the board is live. */
+export type Phase = "setup" | "playing";
+
+export interface GameState {
+  phase: Phase;
+  /** 1 to 4 players; empty during setup. */
+  players: Player[];
+  /** Index into players of whose turn it is. */
+  currentPlayer: number;
   /** Currently open clue, or null when the board is showing. */
   selected: ClueRef | null;
   /** Whether the open clue's response has been revealed. */
@@ -38,6 +50,7 @@ export interface GameState {
 }
 
 export type Action =
+  | { type: "start"; players: number }
   | { type: "select"; c: number; q: number }
   | { type: "reveal" }
   | { type: "answer"; correct: boolean }

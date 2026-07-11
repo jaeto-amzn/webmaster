@@ -215,3 +215,123 @@ body {
 .btn:hover {
   filter: brightness(1.08);
 }
+
+/* Setup screen */
+.setup {
+  text-align: center;
+  padding: 48px 16px;
+}
+
+.setup h2 {
+  font-size: clamp(22px, 4vw, 32px);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.player-choices {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin: 24px 0;
+}
+
+.choice {
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
+  border: 3px solid var(--gold);
+  background: var(--jeopardy-blue);
+  color: var(--gold-bright);
+  font-size: 28px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.choice.selected {
+  background: var(--gold-bright);
+  color: var(--ink);
+}
+
+.btn.start {
+  background: var(--gold-bright);
+  font-size: 18px;
+  padding: 14px 28px;
+}
+
+/* Multiplayer scoreboard */
+.scoreboard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.players {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.player {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 84px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.player.current {
+  border-color: var(--gold-bright);
+  box-shadow: 0 0 0 2px rgba(255, 204, 0, 0.25);
+}
+
+.player.winner {
+  background: rgba(76, 208, 125, 0.18);
+  border-color: #4cd07d;
+}
+
+.player .pname {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.85;
+}
+
+.player .pscore {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--gold-bright);
+}
+
+.player .pscore.negative {
+  color: #ff6b6b;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status .result {
+  font-weight: 800;
+  color: var(--gold-bright);
+}
+
+.status .progress {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+/* Turn indicator in the clue modal */
+.clue-meta .turn {
+  font-weight: 700;
+  color: var(--gold-bright);
+  text-transform: uppercase;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
