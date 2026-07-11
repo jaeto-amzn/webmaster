@@ -1,0 +1,69 @@
+# Reusable: deploy the built site to a named environment.
+#
+# GitHub Pages hosts a single site per repo, so only the `production`
+# environment does a real Pages deploy. `preview` and `staging` publish the
+# same build artifact and record an environment URL (simulated), which is
+# enough to exercise branch-routed environments and protection rules.
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Target environment name (preview | staging | production)"
+        type: string
+        required: true
+      pages:
+        description: "Do a real GitHub Pages deploy (production only)"
+        type: boolean
+        required: false
+        default: false
+      url:
+        description: "Environment URL to record for simulated deploys"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ inputs.pages && steps.pages_deploy.outputs.page_url || inputs.url }}
+    steps:
+      - name: Download built site
+        uses: actions/download-artifact@v4
+        with:
+          name: site-dist
+          path: dist
+
+      # --- Real GitHub Pages deploy (production) ---
+      - name: Configure Pages
+        if: ${{ inputs.pages }}
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        if: ${{ inputs.pages }}
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Deploy to GitHub Pages
+        if: ${{ inputs.pages }}
+        id: pages_deploy
+        uses: actions/deploy-pages@v4
+
+      # --- Simulated publish (preview / staging) ---
+      - name: Publish to ${{ inputs.environment }} (simulated)
+        if: ${{ !inputs.pages }}
+        run: |
+          echo "Published build to the '${{ inputs.environment }}' environment."
+          {
+            echo "### Deployed to \`${{ inputs.environment }}\`"
+            echo "Bundle: $(du -sh dist | cut -f1) at ${{ inputs.url }}"
+          } >> "$GITHUB_STEP_SUMMARY"

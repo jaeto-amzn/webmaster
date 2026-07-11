@@ -1,0 +1,203 @@
+# ============================================================================
+#  React Jeopardy - CI/CD
+#
+#    changes ─┐
+#    setup  ──┼─► lint ────────┐
+#             ├─► typecheck ───┤
+#             ├─► unit-tests ──┤ (dynamic matrix: node 18/20/22)
+#             └─► build ───────┤ (reusable: build.yml)
+#                              ▼
+#                        quality-gate  (join: aggregates all results)
+#                              │
+#                    ┌─────────┴──────────┐
+#                    ▼                    ▼
+#             quality (reusable      branch-routed deploy (reusable deploy.yml):
+#             quality.yml: audit       feature/** or PR -> preview
+#             + bundle-size fork)      develop          -> staging
+#                    │                 main             -> production (approval-gated)
+#                    ▼                    │
+#                    └─────────┬──────────┘
+#                              ▼
+#                          summary  (always: final report)
+#
+#  Cross-workflow: promote.yml watches CI on `develop`; on success it opens a
+#  develop -> main promotion PR. Merging main triggers the production deploy.
+# ============================================================================
+name: CI
+
+on:
+  push:
+    branches: [main, develop, "feature/**"]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      ci: ${{ steps.filter.outputs.ci }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'index.html'
+              - 'package.json'
+              - 'vite.config.ts'
+              - 'tsconfig.json'
+            ci:
+              - '.github/**'
+
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      node-matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-node-deps
+      - name: Compute test matrix
+        id: matrix
+        run: echo 'matrix={"node":["18","20","22"]}' >> "$GITHUB_OUTPUT"
+
+  lint:
+    needs: [changes, setup]
+    if: ${{ needs.changes.outputs.code == 'true' || github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-node-deps
+      - run: npm run lint
+
+  typecheck:
+    needs: [changes, setup]
+    if: ${{ needs.changes.outputs.code == 'true' || github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-node-deps
+      - run: npm run typecheck
+
+  unit-tests:
+    needs: [changes, setup]
+    if: ${{ needs.changes.outputs.code == 'true' || github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.node-matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-node-deps
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm test
+
+  build:
+    needs: [changes, setup, lint, typecheck]
+    if: ${{ !cancelled() && (needs.changes.outputs.code == 'true' || github.event_name != 'pull_request') && needs.lint.result == 'success' && needs.typecheck.result == 'success' }}
+    uses: ./.github/workflows/build.yml
+    with:
+      node-version: "20"
+
+  quality-gate:
+    needs: [lint, typecheck, unit-tests, build]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate branch results
+        run: |
+          fail=0
+          check() {
+            case "$2" in
+              success|skipped) echo "✓ $1: $2" ;;
+              *) echo "✗ $1: $2"; fail=1 ;;
+            esac
+          }
+          check lint       "${{ needs.lint.result }}"
+          check typecheck  "${{ needs.typecheck.result }}"
+          check unit-tests "${{ needs.unit-tests.result }}"
+          check build      "${{ needs.build.result }}"
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::One or more required branches failed."
+            exit 1
+          fi
+          echo "All required branches passed."
+
+  quality:
+    needs: [quality-gate, build]
+    if: ${{ needs.quality-gate.result == 'success' && needs.build.result == 'success' }}
+    uses: ./.github/workflows/quality.yml
+    with:
+      bundle-bytes: ${{ needs.build.outputs.bundle-bytes }}
+      max-bundle-bytes: 1048576
+
+  # --- feature/** + pull requests: ephemeral preview environment ------------
+  deploy-preview:
+    needs: [quality-gate, quality, build]
+    if: ${{ needs.quality.result == 'success' && (github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/feature/')) }}
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: preview
+      pages: false
+      url: https://example.invalid/preview/${{ github.event.number || github.ref_name }}
+
+  # --- develop: staging environment -----------------------------------------
+  deploy-staging:
+    needs: [quality-gate, quality, build]
+    if: ${{ needs.quality.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: staging
+      pages: false
+      url: https://example.invalid/staging
+
+  # --- main: production Pages deploy, gated by the `production` environment's
+  #     protection rule (required reviewers), configured in repo settings ----
+  deploy-production:
+    needs: [quality-gate, quality, build]
+    if: ${{ needs.quality.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: production
+      pages: true
+
+  summary:
+    needs:
+      [changes, setup, lint, typecheck, unit-tests, build, quality-gate, quality, deploy-preview, deploy-staging, deploy-production]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pipeline summary
+        run: |
+          {
+            echo "## CI summary for \`${{ github.ref_name }}\`"
+            echo ""
+            echo "| Stage | Result |"
+            echo "|-------|--------|"
+            echo "| changes        | ${{ needs.changes.result }} |"
+            echo "| setup          | ${{ needs.setup.result }} |"
+            echo "| lint           | ${{ needs.lint.result }} |"
+            echo "| typecheck      | ${{ needs.typecheck.result }} |"
+            echo "| unit-tests     | ${{ needs.unit-tests.result }} |"
+            echo "| build          | ${{ needs.build.result }} |"
+            echo "| quality-gate   | ${{ needs.quality-gate.result }} |"
+            echo "| quality        | ${{ needs.quality.result }} |"
+            echo "| deploy-preview | ${{ needs.deploy-preview.result }} |"
+            echo "| deploy-staging | ${{ needs.deploy-staging.result }} |"
+            echo "| deploy-production | ${{ needs.deploy-production.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

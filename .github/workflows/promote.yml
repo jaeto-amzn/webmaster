@@ -1,0 +1,50 @@
+# Cross-workflow promotion (the "slice of D").
+# When CI finishes successfully on `develop`, open (or update) a promotion
+# pull request from develop into main. Triggered by the CI workflow completing,
+# not by the push itself, so promotion only happens on green builds.
+name: promote-develop-to-main
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [develop]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-promotion-pr:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Open or update develop -> main PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch origin main develop --quiet
+
+          if [ -z "$(git rev-list origin/main..origin/develop)" ]; then
+            echo "develop is not ahead of main; nothing to promote."
+            exit 0
+          fi
+
+          existing=$(gh pr list --base main --head develop --state open \
+            --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            echo "Promotion PR #$existing is already open; leaving it."
+            exit 0
+          fi
+
+          ahead=$(git rev-list --count origin/main..origin/develop)
+          gh pr create --base main --head develop \
+            --title "Promote develop to main ($ahead commit(s))" \
+            --body "Automated promotion PR opened after CI passed on \`develop\`.
+
+          This carries $ahead commit(s) from develop into main. Merging triggers the production deploy (gated by the \`production\` environment protection rule)."
+          echo "Opened promotion PR."

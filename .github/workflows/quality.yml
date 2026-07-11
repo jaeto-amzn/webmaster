@@ -1,0 +1,38 @@
+# Reusable: post-build quality checks. Forks into two parallel jobs.
+name: quality
+
+on:
+  workflow_call:
+    inputs:
+      max-bundle-bytes:
+        description: "Fail if the built bundle exceeds this size"
+        type: number
+        required: false
+        default: 1048576
+      bundle-bytes:
+        description: "Measured bundle size from the build workflow"
+        type: string
+        required: true
+
+jobs:
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-node-deps
+      - name: npm audit (high+ severity)
+        run: npm audit --audit-level=high || echo "::warning::npm audit found high/critical advisories"
+
+  bundle-size-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce bundle budget
+        run: |
+          actual="${{ inputs.bundle-bytes }}"
+          budget="${{ inputs.max-bundle-bytes }}"
+          echo "Bundle: ${actual} bytes / budget ${budget} bytes"
+          if [ "${actual:-0}" -gt "$budget" ]; then
+            echo "::error::Bundle ${actual}B exceeds budget ${budget}B"
+            exit 1
+          fi
+          echo "Within budget."

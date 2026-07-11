@@ -1,0 +1,43 @@
+# Reusable: build the production bundle and publish it as an artifact.
+name: build
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        required: false
+        default: "20"
+    outputs:
+      bundle-bytes:
+        description: "Total size of dist/ in bytes"
+        value: ${{ jobs.build.outputs.bundle-bytes }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      bundle-bytes: ${{ steps.measure.outputs.bytes }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-node-deps
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Build
+        run: npm run build
+
+      - name: Measure bundle
+        id: measure
+        run: |
+          bytes=$(du -sb dist | cut -f1)
+          echo "bytes=$bytes" >> "$GITHUB_OUTPUT"
+          echo "### Bundle size" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`dist/\` is **$bytes bytes** ($(du -sh dist | cut -f1))." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload site artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-dist
+          path: dist
+          retention-days: 7
