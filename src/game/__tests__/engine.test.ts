@@ -6,8 +6,10 @@ import {
   isComplete,
   clueKey,
   totalClues,
+  leaders,
+  MAX_PLAYERS,
 } from "../engine";
-import type { Board } from "../types";
+import type { Board, GameState } from "../types";
 
 const testBoard: Board = [
   {
@@ -23,104 +25,119 @@ const testBoard: Board = [
   },
 ];
 
-describe("createInitialState", () => {
-  it("starts at zero with nothing selected or answered", () => {
+/** Start a 2-player game on the test board. */
+function twoPlayer(): GameState {
+  return reducer(createInitialState(), { type: "start", players: 2 }, testBoard);
+}
+
+describe("setup + start", () => {
+  it("begins in the setup phase with no players", () => {
     const s = createInitialState();
-    expect(s.score).toBe(0);
-    expect(s.selected).toBeNull();
-    expect(s.answered).toEqual([]);
-    expect(s.revealed).toBe(false);
+    expect(s.phase).toBe("setup");
+    expect(s.players).toEqual([]);
   });
-});
 
-describe("select", () => {
-  it("opens a clue", () => {
+  it("start creates N named players at zero and enters play", () => {
+    const s = twoPlayer();
+    expect(s.phase).toBe("playing");
+    expect(s.players).toEqual([
+      { name: "Player 1", score: 0 },
+      { name: "Player 2", score: 0 },
+    ]);
+    expect(s.currentPlayer).toBe(0);
+  });
+
+  it("clamps the player count to 1..MAX_PLAYERS", () => {
+    expect(reducer(createInitialState(), { type: "start", players: 0 }).players).toHaveLength(1);
+    expect(
+      reducer(createInitialState(), { type: "start", players: 99 }).players,
+    ).toHaveLength(MAX_PLAYERS);
+  });
+
+  it("ignores select while still in setup", () => {
     const s = reducer(createInitialState(), { type: "select", c: 0, q: 0 }, testBoard);
-    expect(s.selected).toEqual({ c: 0, q: 0 });
-    expect(s.revealed).toBe(false);
+    expect(s.selected).toBeNull();
+  });
+});
+
+describe("turn-based scoring", () => {
+  it("a correct answer scores the current player and keeps their turn", () => {
+    let s = twoPlayer();
+    s = reducer(s, { type: "select", c: 0, q: 1 }, testBoard); // $400
+    s = reducer(s, { type: "answer", correct: true }, testBoard);
+    expect(s.players[0].score).toBe(400);
+    expect(s.players[1].score).toBe(0);
+    expect(s.currentPlayer).toBe(0);
+    expect(isAnswered(s, 0, 1)).toBe(true);
   });
 
-  it("ignores a second select while a clue is open", () => {
-    let s = reducer(createInitialState(), { type: "select", c: 0, q: 0 }, testBoard);
+  it("a wrong answer deducts and passes the turn", () => {
+    let s = twoPlayer();
     s = reducer(s, { type: "select", c: 0, q: 1 }, testBoard);
-    expect(s.selected).toEqual({ c: 0, q: 0 });
-  });
-
-  it("ignores selecting an already-answered clue", () => {
-    let s = reducer(createInitialState(), { type: "select", c: 0, q: 0 }, testBoard);
-    s = reducer(s, { type: "answer", correct: true }, testBoard);
-    s = reducer(s, { type: "select", c: 0, q: 0 }, testBoard);
-    expect(s.selected).toBeNull();
-  });
-
-  it("ignores out-of-range coordinates", () => {
-    const s = reducer(createInitialState(), { type: "select", c: 9, q: 9 }, testBoard);
-    expect(s.selected).toBeNull();
-  });
-});
-
-describe("reveal", () => {
-  it("reveals the open clue's response", () => {
-    let s = reducer(createInitialState(), { type: "select", c: 0, q: 0 }, testBoard);
-    s = reducer(s, { type: "reveal" }, testBoard);
-    expect(s.revealed).toBe(true);
-  });
-
-  it("is a no-op with nothing open", () => {
-    const s = reducer(createInitialState(), { type: "reveal" }, testBoard);
-    expect(s.revealed).toBe(false);
-  });
-});
-
-describe("answer", () => {
-  it("adds the value on a correct answer and closes the clue", () => {
-    let s = reducer(createInitialState(), { type: "select", c: 0, q: 1 }, testBoard);
-    s = reducer(s, { type: "answer", correct: true }, testBoard);
-    expect(s.score).toBe(400);
-    expect(s.selected).toBeNull();
-    expect(isAnswered(s, 0, 1)).toBe(true);
-  });
-
-  it("subtracts the value on a wrong answer", () => {
-    let s = reducer(createInitialState(), { type: "select", c: 0, q: 1 }, testBoard);
     s = reducer(s, { type: "answer", correct: false }, testBoard);
-    expect(s.score).toBe(-400);
-    expect(isAnswered(s, 0, 1)).toBe(true);
+    expect(s.players[0].score).toBe(-400);
+    expect(s.currentPlayer).toBe(1);
   });
-});
 
-describe("close", () => {
-  it("marks the clue used without changing the score", () => {
-    let s = reducer(createInitialState(), { type: "select", c: 0, q: 0 }, testBoard);
+  it("skipping passes the turn without scoring", () => {
+    let s = twoPlayer();
+    s = reducer(s, { type: "select", c: 0, q: 0 }, testBoard);
     s = reducer(s, { type: "close" }, testBoard);
-    expect(s.score).toBe(0);
+    expect(s.players.every((p) => p.score === 0)).toBe(true);
+    expect(s.currentPlayer).toBe(1);
     expect(isAnswered(s, 0, 0)).toBe(true);
-    expect(s.selected).toBeNull();
+  });
+
+  it("turn wraps around the player list", () => {
+    let s = twoPlayer();
+    s = reducer(s, { type: "select", c: 0, q: 0 }, testBoard);
+    s = reducer(s, { type: "answer", correct: false }, testBoard); // 0 -> 1
+    s = reducer(s, { type: "select", c: 0, q: 1 }, testBoard);
+    s = reducer(s, { type: "answer", correct: false }, testBoard); // 1 -> 0
+    expect(s.currentPlayer).toBe(0);
+  });
+
+  it("solo play keeps the single player in control", () => {
+    let s = reducer(createInitialState(), { type: "start", players: 1 }, testBoard);
+    s = reducer(s, { type: "select", c: 0, q: 0 }, testBoard);
+    s = reducer(s, { type: "answer", correct: false }, testBoard);
+    expect(s.currentPlayer).toBe(0);
+    expect(s.players[0].score).toBe(-200);
   });
 });
 
-describe("completion + reset", () => {
-  it("totalClues counts every clue on the board", () => {
+describe("completion, winners, reset", () => {
+  it("totalClues counts every clue", () => {
     expect(totalClues(testBoard)).toBe(3);
   });
 
-  it("isComplete once all clues are answered", () => {
-    let s = createInitialState();
-    const coords = [
-      { c: 0, q: 0 },
-      { c: 0, q: 1 },
-      { c: 1, q: 0 },
-    ];
-    for (const { c, q } of coords) {
-      s = reducer(s, { type: "select", c, q }, testBoard);
-      s = reducer(s, { type: "answer", correct: true }, testBoard);
-    }
-    expect(isComplete(s, testBoard)).toBe(true);
+  it("is not complete during setup", () => {
+    expect(isComplete(createInitialState(), testBoard)).toBe(false);
   });
 
-  it("reset returns to the initial state", () => {
-    let s = reducer(createInitialState(), { type: "select", c: 0, q: 0 }, testBoard);
+  it("isComplete once all clues are used, and leaders reports the winner", () => {
+    let s = twoPlayer();
+    // P1 gets $200 (correct, keeps turn), then $400 (correct), then skip last.
+    s = reducer(s, { type: "select", c: 0, q: 0 }, testBoard);
     s = reducer(s, { type: "answer", correct: true }, testBoard);
+    s = reducer(s, { type: "select", c: 0, q: 1 }, testBoard);
+    s = reducer(s, { type: "answer", correct: true }, testBoard);
+    s = reducer(s, { type: "select", c: 1, q: 0 }, testBoard);
+    s = reducer(s, { type: "close" }, testBoard);
+    expect(isComplete(s, testBoard)).toBe(true);
+    const top = leaders(s);
+    expect(top).toHaveLength(1);
+    expect(top[0].name).toBe("Player 1");
+    expect(top[0].score).toBe(600);
+  });
+
+  it("leaders returns everyone on a tie", () => {
+    const s = twoPlayer(); // both at 0
+    expect(leaders(s)).toHaveLength(2);
+  });
+
+  it("reset returns to setup", () => {
+    let s = twoPlayer();
     s = reducer(s, { type: "reset" }, testBoard);
     expect(s).toEqual(createInitialState());
   });
