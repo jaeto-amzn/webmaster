@@ -4,6 +4,7 @@ import { BOARD } from "./game/questions";
 import { Board } from "./components/Board";
 import { ClueModal } from "./components/ClueModal";
 import { Scoreboard } from "./components/Scoreboard";
+import { Setup } from "./components/Setup";
 
 export default function App() {
   const [state, dispatch] = useReducer(reducer, undefined, createInitialState);
@@ -18,13 +19,25 @@ export default function App() {
         <h1>
           React <span className="accent">Jeopardy</span>
         </h1>
-        <Scoreboard state={state} complete={complete} dispatch={dispatch} />
+        {state.phase === "playing" && (
+          <Scoreboard state={state} complete={complete} dispatch={dispatch} />
+        )}
       </header>
 
-      <Board board={BOARD} state={state} dispatch={dispatch} />
-
-      {selectedClue && (
-        <ClueModal clue={selectedClue} revealed={state.revealed} dispatch={dispatch} />
+      {state.phase === "setup" ? (
+        <Setup dispatch={dispatch} />
+      ) : (
+        <>
+          <Board board={BOARD} state={state} dispatch={dispatch} />
+          {selectedClue && (
+            <ClueModal
+              clue={selectedClue}
+              revealed={state.revealed}
+              currentPlayerName={state.players[state.currentPlayer]?.name ?? ""}
+              dispatch={dispatch}
+            />
+          )}
+        </>
       )}
     </div>
   );

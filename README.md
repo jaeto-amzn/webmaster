@@ -17,7 +17,7 @@ Every clue carries a `source` tag mapping it to one of six areas the content is 
 
 ## Play
 
-Click a cell to open its clue, hit **Reveal answer** to see the correct "What is ...?" response, then mark it **Correct** (+value) or **Wrong** (-value), classic Jeopardy scoring. **Skip** dismisses a clue without scoring. Reset any time.
+Choose **1 to 4 players** on the setup screen. Players take turns: click a cell to open its clue, hit **Reveal answer** to see the correct "What is ...?" response, then mark the current player **Correct** (+value, keep control) or **Wrong** (-value, turn passes). **Skip** passes the turn without scoring. When the board is cleared the highest score wins (ties are called). Start a **New game** any time.
 
 ## Develop
 
