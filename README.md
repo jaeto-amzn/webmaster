@@ -108,7 +108,17 @@ Branches route to different GitHub Environments through the same reusable `deplo
 | push to `preprod` | `preprod` | simulated pre-production URL |
 | push to `main` | `production` | real GitHub Pages deploy, gated by the environment's protection rule |
 
-A separate workflow, `promote.yml`, watches CI via `workflow_run` on `staging` and `preprod`; on green it opens the next-stage promotion PR along the chain `staging -> preprod -> main`. Merging each advances a stage; reaching `main` triggers the production deploy.
+A separate workflow, `promote.yml`, watches CI via `workflow_run` on `staging` and `preprod`; on green it opens a promotion PR to **each** downstream target. The promotion graph forks:
+
+```mermaid
+flowchart LR
+  feat["feature/**"] -->|PR| staging
+  staging -->|auto-PR| develop
+  staging -->|auto-PR| preprod
+  preprod -->|auto-PR| main["main (production)"]
+```
+
+`staging` fans out to `develop` and `preprod` in parallel; `develop` is a parallel integration track; `preprod` promotes to `main`, whose merge triggers the approval-gated production deploy.
 
 **Two manual setup steps** (can't be expressed in YAML):
 - Repo Settings, then Environments, create `production` and add required reviewers so the `deploy-production` job pauses for approval.
@@ -122,7 +132,7 @@ This deliberately runs on the ordinary `pull_request` event, not `pull_request_t
 
 **Pages caveat:** GitHub Pages hosts one site per repo, so only `production` is a real Pages deploy. `preview`, `staging`, and `preprod` publish the same build artifact and record an environment URL (simulated) to exercise the branch routing and protection rules without extra infra.
 
-Highlights: a path-filter router lets doc/CI-only PRs skip the code branches (the join tolerates skipped branches); `setup` emits a dynamic test matrix consumed with `fromJSON`; static checks fan out in parallel and rejoin at `quality-gate`; three reusable sub-workflows run as nested DAGs (`quality.yml` itself forks into audit + bundle-size); branch routing sends `feature/**`/PRs to `preview`, `staging` to `staging`, `preprod` to `preprod`, and `main` to the approval-gated `production` Pages deploy; a cross-workflow `promote.yml` chains the `staging -> preprod -> main` promotion PRs on green; and a final `always()` summary posts a result table.
+Highlights: a path-filter router lets doc/CI-only PRs skip the code branches (the join tolerates skipped branches); `setup` emits a dynamic test matrix consumed with `fromJSON`; static checks fan out in parallel and rejoin at `quality-gate`; three reusable sub-workflows run as nested DAGs (`quality.yml` itself forks into audit + bundle-size); branch routing sends `feature/**`/PRs to `preview`, `staging` to `staging`, `preprod` to `preprod`, and `main` to the approval-gated `production` Pages deploy; a cross-workflow `promote.yml` fans out promotion PRs (`staging` to both `develop` and `preprod` in parallel, then `preprod` to `main`) on green; and a final `always()` summary posts a result table.
 
 ## Deploy to GitHub Pages
 

@@ -1,7 +1,8 @@
-# Cross-workflow chained promotion.
-# When CI finishes successfully on `staging` or `preprod`, open (or update) a
-# promotion PR to the next stage in the chain:
-#   staging -> preprod -> main
+# Cross-workflow forked promotion.
+# When CI finishes successfully on a source branch, open (or update) a
+# promotion PR to EACH of its downstream targets:
+#   staging -> develop AND preprod   (parallel fan-out)
+#   preprod -> main
 # Triggered by the CI workflow completing, so promotion only happens on green.
 name: promote
 
@@ -16,7 +17,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  open-promotion-pr:
+  open-promotion-prs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
@@ -24,37 +25,39 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Open the next-stage promotion PR
+      - name: Open promotion PR(s) to each downstream target
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE: ${{ github.event.workflow_run.head_branch }}
         run: |
-          # Map each source branch to the next stage.
+          # Each source fans out to one or more targets (space-separated).
           case "$SOURCE" in
-            staging) TARGET=preprod ;;
-            preprod) TARGET=main ;;
+            staging) TARGETS="develop preprod" ;;
+            preprod) TARGETS="main" ;;
             *) echo "No promotion mapping for '$SOURCE'."; exit 0 ;;
           esac
-          echo "Promotion: $SOURCE -> $TARGET"
+          echo "Promoting $SOURCE -> [$TARGETS]"
 
-          git fetch origin "$TARGET" "$SOURCE" --quiet
+          for TARGET in $TARGETS; do
+            git fetch origin "$TARGET" "$SOURCE" --quiet
 
-          if [ -z "$(git rev-list origin/$TARGET..origin/$SOURCE)" ]; then
-            echo "$SOURCE is not ahead of $TARGET; nothing to promote."
-            exit 0
-          fi
+            if [ -z "$(git rev-list origin/$TARGET..origin/$SOURCE)" ]; then
+              echo "$SOURCE is not ahead of $TARGET; skipping."
+              continue
+            fi
 
-          existing=$(gh pr list --base "$TARGET" --head "$SOURCE" --state open \
-            --json number --jq '.[0].number' 2>/dev/null || true)
-          if [ -n "$existing" ]; then
-            echo "Promotion PR #$existing ($SOURCE -> $TARGET) is already open."
-            exit 0
-          fi
+            existing=$(gh pr list --base "$TARGET" --head "$SOURCE" --state open \
+              --json number --jq '.[0].number' 2>/dev/null || true)
+            if [ -n "$existing" ]; then
+              echo "Promotion PR #$existing ($SOURCE -> $TARGET) already open."
+              continue
+            fi
 
-          ahead=$(git rev-list --count origin/$TARGET..origin/$SOURCE)
-          gh pr create --base "$TARGET" --head "$SOURCE" \
-            --title "Promote $SOURCE to $TARGET ($ahead commit(s))" \
-            --body "Automated promotion PR opened after CI passed on \`$SOURCE\`.
+            ahead=$(git rev-list --count origin/$TARGET..origin/$SOURCE)
+            gh pr create --base "$TARGET" --head "$SOURCE" \
+              --title "Promote $SOURCE to $TARGET ($ahead commit(s))" \
+              --body "Automated promotion PR opened after CI passed on \`$SOURCE\`.
 
-          Carries $ahead commit(s) into \`$TARGET\`. Merging advances the chain (staging -> preprod -> main); reaching main triggers the production deploy, gated by the \`production\` environment protection rule."
-          echo "Opened $SOURCE -> $TARGET promotion PR."
+          Carries $ahead commit(s) into \`$TARGET\`. \`staging\` fans out to both \`develop\` and \`preprod\` in parallel; \`preprod\` promotes to \`main\`, whose merge triggers the production deploy (gated by the \`production\` environment protection rule)."
+            echo "Opened $SOURCE -> $TARGET promotion PR."
+          done

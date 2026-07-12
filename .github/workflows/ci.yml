@@ -28,9 +28,9 @@ name: CI
 
 on:
   push:
-    branches: [main, preprod, staging, "feature/**"]
+    branches: [main, preprod, develop, staging, "feature/**"]
   pull_request:
-    branches: [main, preprod, staging]
+    branches: [main, preprod, develop, staging]
   workflow_dispatch:
 
 concurrency:
