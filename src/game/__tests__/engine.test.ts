@@ -7,6 +7,7 @@ import {
   clueKey,
   totalClues,
   leaders,
+  standings,
   MAX_PLAYERS,
 } from "../engine";
 import type { Board, GameState } from "../types";
@@ -134,6 +135,16 @@ describe("completion, winners, reset", () => {
   it("leaders returns everyone on a tie", () => {
     const s = twoPlayer(); // both at 0
     expect(leaders(s)).toHaveLength(2);
+  });
+
+  it("standings ranks players by score, highest first", () => {
+    let s = twoPlayer();
+    s = reducer(s, { type: "select", c: 0, q: 0 }, testBoard);
+    s = reducer(s, { type: "answer", correct: false }, testBoard); // P1: -200, turn -> P2
+    const ranked = standings(s);
+    expect(ranked.map((p) => p.name)).toEqual(["Player 2", "Player 1"]);
+    expect(ranked[0].score).toBe(0);
+    expect(ranked[1].score).toBe(-200);
   });
 
   it("reset returns to setup", () => {

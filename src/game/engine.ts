@@ -36,6 +36,11 @@ export function leaders(state: GameState): Player[] {
   return state.players.filter((p) => p.score === top);
 }
 
+/** All players ranked by score, highest first (stable for equal scores). */
+export function standings(state: GameState): Player[] {
+  return [...state.players].sort((a, b) => b.score - a.score);
+}
+
 function clampPlayers(n: number): number {
   if (Number.isNaN(n)) return MIN_PLAYERS;
   return Math.min(MAX_PLAYERS, Math.max(MIN_PLAYERS, Math.floor(n)));
