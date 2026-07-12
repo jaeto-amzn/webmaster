@@ -13,23 +13,24 @@
 #                    ▼                    ▼
 #             quality (reusable      branch-routed deploy (reusable deploy.yml):
 #             quality.yml: audit       feature/** or PR -> preview
-#             + bundle-size fork)      develop          -> staging
-#                    │                 main             -> production (approval-gated)
-#                    ▼                    │
+#             + bundle-size fork)      staging          -> staging
+#                    │                 preprod          -> preprod
+#                    ▼                 main             -> production (approval-gated)
 #                    └─────────┬──────────┘
 #                              ▼
 #                          summary  (always: final report)
 #
-#  Cross-workflow: promote.yml watches CI on `develop`; on success it opens a
-#  develop -> main promotion PR. Merging main triggers the production deploy.
+#  Cross-workflow: promote.yml watches CI on `staging` and `preprod`; on success
+#  it chains the next promotion PR (staging -> preprod -> main). Reaching main
+#  triggers the production deploy.
 # ============================================================================
 name: CI
 
 on:
   push:
-    branches: [main, develop, "feature/**"]
+    branches: [main, preprod, staging, "feature/**"]
   pull_request:
-    branches: [main, develop]
+    branches: [main, preprod, staging]
   workflow_dispatch:
 
 concurrency:
@@ -174,15 +175,25 @@ jobs:
       pages: false
       url: https://example.invalid/preview/${{ github.event.number || github.ref_name }}
 
-  # --- develop: staging environment -----------------------------------------
+  # --- staging branch: staging environment ----------------------------------
   deploy-staging:
     needs: [quality-gate, quality, build]
-    if: ${{ needs.quality.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+    if: ${{ needs.quality.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/staging' }}
     uses: ./.github/workflows/deploy.yml
     with:
       environment: staging
       pages: false
       url: https://example.invalid/staging
+
+  # --- preprod branch: pre-production environment ---------------------------
+  deploy-preprod:
+    needs: [quality-gate, quality, build]
+    if: ${{ needs.quality.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/preprod' }}
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: preprod
+      pages: false
+      url: https://example.invalid/preprod
 
   # --- main: production Pages deploy, gated by the `production` environment's
   #     protection rule (required reviewers), configured in repo settings ----
@@ -200,7 +211,7 @@ jobs:
 
   summary:
     needs:
-      [changes, setup, lint, typecheck, unit-tests, integration-test, build, quality-gate, quality, deploy-preview, deploy-staging, deploy-production]
+      [changes, setup, lint, typecheck, unit-tests, integration-test, build, quality-gate, quality, deploy-preview, deploy-staging, deploy-preprod, deploy-production]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -222,5 +233,6 @@ jobs:
             echo "| quality        | ${{ needs.quality.result }} |"
             echo "| deploy-preview | ${{ needs.deploy-preview.result }} |"
             echo "| deploy-staging | ${{ needs.deploy-staging.result }} |"
+            echo "| deploy-preprod | ${{ needs.deploy-preprod.result }} |"
             echo "| deploy-production | ${{ needs.deploy-production.result }} |"
           } >> "$GITHUB_STEP_SUMMARY"
