@@ -110,6 +110,12 @@ A separate workflow, `promote.yml`, watches the CI workflow via `workflow_run` o
 - Repo Settings, then Environments, create `production` and add required reviewers so the `deploy-production` job pauses for approval.
 - Settings, then Actions, General, enable "Allow GitHub Actions to create and approve pull requests" so `promote.yml` can open the promotion PR.
 
+### Approval-gated integration-test fork
+
+Pull requests fan out into two parallel gates: the fast static checks (`lint`, `typecheck`, `unit-tests`) and an `integration-test` job that pauses for manual approval before it runs. The gate is the `integration-test` **environment's required-reviewers** rule (Settings, then Environments, create `integration-test` with required reviewers).
+
+This deliberately runs on the ordinary `pull_request` event, not `pull_request_target`. `pull_request_target` would give the job repo secrets and a write token while checking out untrusted PR code, which can leak secrets; `pull_request` keeps a read-only token so the approval-gated fork stays safe.
+
 **Pages caveat:** GitHub Pages hosts one site per repo, so only `production` is a real Pages deploy. `preview` and `staging` publish the same build artifact and record an environment URL (simulated) to exercise the branch routing and protection rules without extra infra.
 
 Highlights: a path-filter router lets doc/CI-only PRs skip the code branches (the join tolerates skipped branches); `setup` emits a dynamic test matrix consumed with `fromJSON`; static checks fan out in parallel and rejoin at `quality-gate`; three reusable sub-workflows run as nested DAGs (`quality.yml` itself forks into audit + bundle-size); branch routing sends `feature/**`/PRs to `preview`, `develop` to `staging`, and `main` to the approval-gated `production` Pages deploy; a cross-workflow `promote.yml` opens the `develop -> main` PR on green; and a final `always()` summary posts a result table.
