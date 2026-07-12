@@ -41,6 +41,9 @@ jobs:
       - name: Configure Pages
         if: ${{ inputs.pages }}
         uses: actions/configure-pages@v5
+        with:
+          # Create the Pages site if it hasn't been enabled in repo settings yet.
+          enablement: true
 
       - name: Upload Pages artifact
         if: ${{ inputs.pages }}

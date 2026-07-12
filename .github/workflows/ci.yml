@@ -104,6 +104,27 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm test
 
+  # --- Approval-gated integration-test fork ---------------------------------
+  # This is the safe equivalent of the diagram's
+  #   "pull_request_target -> manual-approval -> integration-test" path.
+  # It runs on the ordinary pull_request event (NOT pull_request_target), so
+  # untrusted PR code never runs with repo secrets or a write token. The gate
+  # is the `integration-test` environment's required-reviewers rule: this job
+  # pauses for a human to approve before it runs. Runs in parallel with the
+  # static checks (it does not feed the production deploy).
+  integration-test:
+    needs: [changes, setup]
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    environment: integration-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-node-deps
+      - name: Integration checks
+        run: |
+          npm test
+          npm run build
+
   build:
     needs: [changes, setup, lint, typecheck]
     if: ${{ !cancelled() && (needs.changes.outputs.code == 'true' || github.event_name != 'pull_request') && needs.lint.result == 'success' && needs.typecheck.result == 'success' }}
@@ -179,7 +200,7 @@ jobs:
 
   summary:
     needs:
-      [changes, setup, lint, typecheck, unit-tests, build, quality-gate, quality, deploy-preview, deploy-staging, deploy-production]
+      [changes, setup, lint, typecheck, unit-tests, integration-test, build, quality-gate, quality, deploy-preview, deploy-staging, deploy-production]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -195,6 +216,7 @@ jobs:
             echo "| lint           | ${{ needs.lint.result }} |"
             echo "| typecheck      | ${{ needs.typecheck.result }} |"
             echo "| unit-tests     | ${{ needs.unit-tests.result }} |"
+            echo "| integration-test | ${{ needs.integration-test.result }} |"
             echo "| build          | ${{ needs.build.result }} |"
             echo "| quality-gate   | ${{ needs.quality-gate.result }} |"
             echo "| quality        | ${{ needs.quality.result }} |"
