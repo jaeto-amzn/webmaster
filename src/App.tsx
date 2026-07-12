@@ -5,6 +5,7 @@ import { Board } from "./components/Board";
 import { ClueModal } from "./components/ClueModal";
 import { Scoreboard } from "./components/Scoreboard";
 import { Setup } from "./components/Setup";
+import { GameOver } from "./components/GameOver";
 
 export default function App() {
   const [state, dispatch] = useReducer(reducer, undefined, createInitialState);
@@ -19,13 +20,15 @@ export default function App() {
         <h1>
           React <span className="accent">Jeopardy</span>
         </h1>
-        {state.phase === "playing" && (
+        {state.phase === "playing" && !complete && (
           <Scoreboard state={state} complete={complete} dispatch={dispatch} />
         )}
       </header>
 
       {state.phase === "setup" ? (
         <Setup dispatch={dispatch} />
+      ) : complete ? (
+        <GameOver state={state} dispatch={dispatch} />
       ) : (
         <>
           <Board board={BOARD} state={state} dispatch={dispatch} />
